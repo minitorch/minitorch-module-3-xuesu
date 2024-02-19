@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import random
-from typing import Iterable, Optional, Sequence, Tuple, Union
+from typing import Iterable, List, Optional, Sequence, Tuple, Union
 
 import numba
 import numpy as np
@@ -42,11 +42,11 @@ def index_to_position(index: Index, strides: Strides) -> int:
     Returns:
         Position in storage
     """
+    assert len(index) == len(strides)
+    return sum([i * s for i, s in zip(index, strides)])
 
-    raise NotImplementedError("Need to include this file from past assignment.")
 
-
-def to_index(ordinal: int, shape: Shape, out_index: OutIndex) -> None:
+def to_index(ordinal: int, shape: Union[Shape, UserShape], out_index: OutIndex) -> None:
     """
     Convert an `ordinal` to an index in the `shape`.
     Should ensure that enumerating position 0 ... size of a
@@ -59,7 +59,12 @@ def to_index(ordinal: int, shape: Shape, out_index: OutIndex) -> None:
         out_index : return index corresponding to position.
 
     """
-    raise NotImplementedError("Need to include this file from past assignment.")
+    bs = int(np.prod(shape))
+    ordinal %= bs
+    for i in range(len(shape)):
+        bs = int(bs / shape[i])
+        out_index[i] = int(ordinal / bs)
+        ordinal %= bs
 
 
 def broadcast_index(
@@ -81,7 +86,18 @@ def broadcast_index(
     Returns:
         None
     """
-    raise NotImplementedError("Need to include this file from past assignment.")
+    if not np.array_equal(big_shape, shape):
+        ext_dim = len(big_shape) - len(shape)
+        assert ext_dim >= 0
+        for i in range(ext_dim, len(big_shape)):
+            if big_shape[i] != shape[i - ext_dim]:
+                assert big_shape[i] > shape[i - ext_dim] and shape[i - ext_dim] == 1
+                out_index[i - ext_dim] = 0
+            else:
+                out_index[i - ext_dim] = big_index[i]
+        return
+    else:
+        out_index[:] = big_index
 
 
 def shape_broadcast(shape1: UserShape, shape2: UserShape) -> UserShape:
@@ -98,7 +114,22 @@ def shape_broadcast(shape1: UserShape, shape2: UserShape) -> UserShape:
     Raises:
         IndexingError : if cannot broadcast
     """
-    raise NotImplementedError("Need to include this file from past assignment.")
+    if len(shape1) > len(shape2):
+        shape1, shape2 = shape2, shape1
+    _ans = list(shape1)
+    if len(shape1) < len(shape2):
+        ext_dim = len(shape2) - len(shape1)
+        _ans = [1] * ext_dim + _ans
+    else:
+        ext_dim = 0
+
+    for i in range(len(shape2)):
+        if _ans[i] != shape2[i]:
+            if _ans[i] == 1:
+                _ans[i] = shape2[i]
+            elif shape2[i] > 1:
+                raise IndexingError(f"Cannot broadcase {shape1} into {shape2}")
+    return tuple(_ans)
 
 
 def strides_from_shape(shape: UserShape) -> UserStrides:
@@ -218,7 +249,10 @@ class TensorData:
             range(len(self.shape))
         ), f"Must give a position to each dimension. Shape: {self.shape} Order: {order}"
 
-        raise NotImplementedError("Need to include this file from past assignment.")
+        new_shape = [self.shape[o] for o in order]
+        new_strides = [self.strides[o] for o in order]
+        _ans = TensorData(self._storage, tuple(new_shape), tuple(new_strides))
+        return _ans
 
     def to_string(self) -> str:
         s = ""
@@ -231,7 +265,7 @@ class TensorData:
                     break
             s += l
             v = self.get(index)
-            s += f"{v:3.2f}"
+            s += f"{v:3.4f}"
             l = ""
             for i in range(len(index) - 1, -1, -1):
                 if index[i] == self.shape[i] - 1:

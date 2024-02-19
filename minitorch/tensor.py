@@ -5,7 +5,7 @@ Implementation of the core Tensor object for autodifferentiation.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 import numpy as np
 
@@ -55,6 +55,16 @@ class History:
     last_fn: Optional[Type[Function]] = None
     ctx: Optional[Context] = None
     inputs: Sequence[Tensor] = ()
+
+    def __init__(
+        self,
+        last_fn: Optional[Type[Function]] = None,
+        ctx: Optional[Context] = None,
+        inputs: Sequence[Tensor] = (),
+    ):
+        self.last_fn = last_fn
+        self.ctx = ctx
+        self.inputs = inputs
 
 
 _tensor_count = 0
@@ -116,6 +126,7 @@ class Tensor:
         Returns:
              shape of the tensor
         """
+        assert isinstance(self._tensor.shape, tuple)
         return self._tensor.shape
 
     @property
@@ -256,11 +267,23 @@ class Tensor:
     @staticmethod
     def make(
         storage: Union[Storage, List[float]],
-        shape: UserShape,
-        strides: Optional[UserStrides] = None,
+        shape: Union[UserShape, Shape],
+        strides: Optional[Union[UserStrides, Strides]] = None,
         backend: Optional[TensorBackend] = None,
     ) -> Tensor:
         "Create a new tensor from data"
+
+        def force_tuple(x: Union[UserStrides, Strides]) -> Sequence[int]:
+            if isinstance(x, np.ndarray):
+                assert len(x.shape) == 1
+                return tuple(x.tolist())
+            else:
+                assert isinstance(x, tuple)
+                return x
+
+        shape = force_tuple(shape)
+        if strides is not None:
+            strides = force_tuple(strides)
         return Tensor(TensorData(storage, shape, strides), backend=backend)
 
     def expand(self, other: Tensor) -> Tensor:

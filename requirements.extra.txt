@@ -1,10 +1,12 @@
+streamlit==1.12.0
 datasets==2.4.0
 embeddings==0.0.8
 networkx==2.4
 plotly==4.14.3
 pydot==1.4.1
 python-mnist
-streamlit==1.12.0
 streamlit-ace
-torch
+torch==1.13.1
 watchdog==1.0.2
+altair==4.1.0
+networkx==2.8.8

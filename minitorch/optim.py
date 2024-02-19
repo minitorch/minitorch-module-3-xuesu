@@ -30,6 +30,8 @@ class SGD(Optimizer):
                 continue
             if hasattr(p.value, "derivative"):
                 if p.value.derivative is not None:
+                    from minitorch.scalar import Scalar
+
                     p.update(Scalar(p.value.data - self.lr * p.value.derivative))
             elif hasattr(p.value, "grad"):
                 if p.value.grad is not None:

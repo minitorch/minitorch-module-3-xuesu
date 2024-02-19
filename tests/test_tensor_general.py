@@ -316,7 +316,6 @@ def test_two_grad_broadcast(
     "Run backward for all two arg functions above with broadcast."
     t1, t2 = data.draw(shaped_tensors(2, backend=shared[backend]))
     name, base_fn, tensor_fn = fn
-
     grad_check(tensor_fn, t1, t2)
 
     # broadcast check
@@ -340,6 +339,7 @@ def test_permute(backend: str, data: DataObject) -> None:
 
 @pytest.mark.task3_2
 def test_mm2() -> None:
+    random.seed(233)  ### LALALAL
     a = minitorch.rand((2, 3), backend=FastTensorBackend)
     b = minitorch.rand((3, 4), backend=FastTensorBackend)
     c = a @ b
