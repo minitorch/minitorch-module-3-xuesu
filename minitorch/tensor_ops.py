@@ -64,26 +64,26 @@ class MapProto(Protocol):
 
 class TensorOps:
     @staticmethod
-    def map(fn: Callable[[float], float]) -> MapProto:
-        pass  # type:ignore
+    def map(fn: Callable[[float], float]) -> MapProto:  # type: ignore[empty-body]
+        pass
 
     @staticmethod
-    def cmap(fn: Callable[[float], float]) -> Callable[[Tensor, Tensor], Tensor]:
-        pass  # type:ignore
+    def cmap(fn: Callable[[float], float]) -> Callable[[Tensor, Tensor], Tensor]:  # type: ignore[empty-body]
+        pass
 
     @staticmethod
-    def zip(fn: Callable[[float, float], float]) -> Callable[[Tensor, Tensor], Tensor]:
-        pass  # type:ignore
+    def zip(fn: Callable[[float, float], float]) -> Callable[[Tensor, Tensor], Tensor]:  # type: ignore[empty-body]
+        pass
 
     @staticmethod
-    def reduce(
+    def reduce(  # type: ignore[empty-body]
         fn: Callable[[float, float], float], start: float = 0.0
     ) -> Callable[[Tensor, int], Tensor]:
-        pass  # type:ignore
+        pass
 
     @staticmethod
-    def matrix_multiply(a: Tensor, b: Tensor) -> Tensor:
-        pass  # type:ignore
+    def matrix_multiply(a: Tensor, b: Tensor) -> Tensor:  # type: ignore[empty-body]
+        pass
 
     cuda = False
 
