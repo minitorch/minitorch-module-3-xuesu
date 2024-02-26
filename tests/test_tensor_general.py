@@ -227,7 +227,6 @@ if numba.cuda.is_available():
         x = minitorch.tensor(x1, backend=shared["cuda"])
         y = minitorch.tensor(y1, backend=shared["cuda"])
         z2 = x @ y
-
         for i in range(2):
             for j in range(2):
                 assert_close(z[i, j], z2[i, j])
@@ -296,11 +295,9 @@ if numba.cuda.is_available():
         x = minitorch.tensor(x1, backend=shared["cuda"])
         y = minitorch.tensor(y1, backend=shared["cuda"])
         z2 = x @ y
-
         for b in range(2):
             for i in range(size_a):
                 for j in range(size_b):
-                    print(i, j)
                     assert_close(z[b, i, j], z2[b, i, j])
 
 
@@ -339,7 +336,6 @@ def test_permute(backend: str, data: DataObject) -> None:
 
 @pytest.mark.task3_2
 def test_mm2() -> None:
-    random.seed(233)  ### LALALAL
     a = minitorch.rand((2, 3), backend=FastTensorBackend)
     b = minitorch.rand((3, 4), backend=FastTensorBackend)
     c = a @ b

@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Iterable, List, Tuple, runtime_checkable
+from typing import Any, Iterable, Tuple, runtime_checkable
 
 from typing_extensions import Protocol
 
@@ -140,7 +140,7 @@ def backpropagate(variable: Variable, deriv: Any) -> None:
     id2d = {variable.unique_id: deriv}
     for v in que:
         d = id2d[v.unique_id]
-        # print("topv", v, d)
+        # print("topv", v, d, v.history)
         from minitorch.tensor import Tensor
 
         assert (
@@ -154,6 +154,7 @@ def backpropagate(variable: Variable, deriv: Any) -> None:
             for p_v, p_d in v.chain_rule(d):
                 if not isinstance(p_v, Tensor) or p_v.is_constant():
                     continue
+                # print("p_v->v", p_v.unique_id, "->", v.unique_id)
                 assert p_v.shape == p_d.shape or p_d.size == 1
                 if p_v.unique_id not in id2d:
                     id2d[p_v.unique_id] = p_d
@@ -180,3 +181,10 @@ class Context:
     @property
     def saved_tensors(self) -> Tuple[Any, ...]:
         return self.saved_values
+
+    def __repr__(self) -> str:
+        v_repr = [
+            repr(v) if not isinstance(v, Variable) else str(v.unique_id)
+            for v in self.saved_values
+        ]
+        return f"Context(no_grad={self.no_grad}, saved_values=(Var:{','.join(v_repr)}))"

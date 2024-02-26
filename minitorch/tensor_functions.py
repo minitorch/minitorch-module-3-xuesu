@@ -89,6 +89,7 @@ def _make_sure_gradient_shape(gradient: Tensor, x_shape: UserShape) -> Tensor:
         ext_dim = len(gradient.shape) - len(x_shape)
         assert ext_dim >= 0
         for i in range(ext_dim):
+            # print("gradient", gradient.shape, gradient.strides, i)
             gradient = gradient.f.add_reduce(gradient, i)
         for i in range(ext_dim, len(gradient.shape)):
             if gradient.shape[i] != x_shape[i - ext_dim]:
@@ -97,6 +98,7 @@ def _make_sure_gradient_shape(gradient: Tensor, x_shape: UserShape) -> Tensor:
                     and x_shape[i - ext_dim] == 1
                 )
                 # a is broadcasted
+                # print("gradient", gradient.shape, gradient.strides, i)
                 gradient = gradient.f.add_reduce(gradient, i)
         if ext_dim > 0:
             return minitorch.Tensor.make(
@@ -149,6 +151,7 @@ class Mul(Function):
     @staticmethod
     def backward(ctx: Context, grad_output: Tensor) -> Tuple[Tensor, Tensor]:
         a, b = ctx.saved_values
+        # print("a.unique_id", a.unique_id, b.unique_id)
         return _make_sure_gradient_shape(
             a.f.mul_zip(grad_output, b), a.shape
         ), _make_sure_gradient_shape(a.f.mul_zip(grad_output, a), b.shape)
@@ -480,10 +483,19 @@ but was expecting derivative %f from central difference.
 """
 
     for i, x in enumerate(vals):
+        # check_arr = [0.0] * x.size
+        # for tmp_index in x._tensor.indices():
+        #     from minitorch.tensor_data import index_to_position
+
+        #     pos = index_to_position(tmp_index, x.strides)
+        #     check_arr[pos] = grad_central_difference(f, *vals, arg=i, ind=tmp_index)
         ind = x._tensor.sample()
         check = grad_central_difference(f, *vals, arg=i, ind=ind)
         assert x.grad is not None
-        # print("grad", x.grad, check)
+        # print("x.grad: ", x.grad, "check:", check_arr)
+        # print(
+        #     "x.grad: ", x.grad, "ind:", ind, "x.grad[ind]", x.grad[ind], "check:", check
+        # )
         np.testing.assert_allclose(
             x.grad[ind],
             check,

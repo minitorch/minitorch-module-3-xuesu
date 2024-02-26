@@ -42,8 +42,10 @@ def index_to_position(index: Index, strides: Strides) -> int:
     Returns:
         Position in storage
     """
-    assert len(index) == len(strides)
-    return sum([i * s for i, s in zip(index, strides)])
+    _ans = 0
+    for i in range(len(strides)):
+        _ans += index[i] * strides[i]
+    return _ans
 
 
 def to_index(ordinal: int, shape: Union[Shape, UserShape], out_index: OutIndex) -> None:
@@ -59,12 +61,10 @@ def to_index(ordinal: int, shape: Union[Shape, UserShape], out_index: OutIndex) 
         out_index : return index corresponding to position.
 
     """
-    bs = int(np.prod(shape))
-    ordinal %= bs
-    for i in range(len(shape)):
-        bs = int(bs / shape[i])
-        out_index[i] = int(ordinal / bs)
-        ordinal %= bs
+    bs = 1.0
+    for i in range(len(shape) - 1, -1, -1):
+        out_index[i] = int((ordinal % (bs * shape[i])) // bs)
+        bs *= shape[i]
 
 
 def broadcast_index(
@@ -86,18 +86,15 @@ def broadcast_index(
     Returns:
         None
     """
-    if not np.array_equal(big_shape, shape):
-        ext_dim = len(big_shape) - len(shape)
-        assert ext_dim >= 0
-        for i in range(ext_dim, len(big_shape)):
-            if big_shape[i] != shape[i - ext_dim]:
-                assert big_shape[i] > shape[i - ext_dim] and shape[i - ext_dim] == 1
-                out_index[i - ext_dim] = 0
-            else:
-                out_index[i - ext_dim] = big_index[i]
-        return
-    else:
-        out_index[:] = big_index
+    ext_dim = len(big_shape) - len(shape)
+    assert ext_dim >= 0
+    for i in range(ext_dim, len(big_shape)):
+        if big_shape[i] != shape[i - ext_dim]:
+            # assert big_shape[i] > shape[i - ext_dim] and shape[i - ext_dim] == 1
+            out_index[i - ext_dim] = 0
+        else:
+            out_index[i - ext_dim] = big_index[i]
+    return
 
 
 def shape_broadcast(shape1: UserShape, shape2: UserShape) -> UserShape:
@@ -200,7 +197,7 @@ class TensorData:
     def index(self, index: Union[int, UserIndex]) -> int:
         if isinstance(index, int):
             aindex: Index = array([index])
-        if isinstance(index, tuple):
+        if isinstance(index, tuple) or isinstance(index, list):
             aindex = array(index)
 
         # Check for errors
@@ -255,25 +252,47 @@ class TensorData:
         return _ans
 
     def to_string(self) -> str:
-        s = ""
-        for index in self.indices():
-            l = ""
-            for i in range(len(index) - 1, -1, -1):
-                if index[i] == 0:
-                    l = "\n%s[" % ("\t" * i) + l
+        _ans = ["shape: ", str(self.shape), ",", "strides", str(self.strides), "\n"]
+        tmp_index = [0] * self.dims
+        dim_no_need_tab = self.dims - 1
+        for dim_i in range(self.dims - 1, -1, -1):
+            if self.shape[dim_i] > 1:
+                dim_no_need_tab = dim_i
+                break
+
+        def _get_prefix(_dim_j: int) -> str:
+            if _dim_j == dim_no_need_tab:
+                return "\t" * _dim_j + "["
+            elif _dim_j < dim_no_need_tab:
+                return "\t" * _dim_j + "[" + "\n"
+            return "["
+
+        def _get_suffix(_dim_j: int) -> str:
+            if _dim_j == dim_no_need_tab:
+                return "]" + "\n"
+            elif _dim_j < dim_no_need_tab:
+                return "\t" * _dim_j + "]" + "\n"
+            return "]"
+
+        for dim_i in range(self.dims):
+            _ans.append(_get_prefix(dim_i))
+        for _ in range(self.size):
+            v = self.get(tmp_index)
+            _ans.append(f"{v:3.4f},")
+            tmp_index[-1] += 1
+            ok_dim_i = self.dims
+            for dim_i in range(self.dims - 1, -1, -1):
+                if tmp_index[dim_i] >= self.shape[dim_i]:
+                    ok_dim_i = dim_i
+                    tmp_index[dim_i] = 0
+                    tmp_index[dim_i - 1] += 1
                 else:
                     break
-            s += l
-            v = self.get(index)
-            s += f"{v:3.4f}"
-            l = ""
-            for i in range(len(index) - 1, -1, -1):
-                if index[i] == self.shape[i] - 1:
-                    l += "]"
-                else:
-                    break
-            if l:
-                s += l
-            else:
-                s += " "
-        return s
+            if ok_dim_i > 0:
+                for dim_i in range(self.dims - 1, ok_dim_i - 1, -1):
+                    _ans.append(_get_suffix(dim_i))
+                for dim_i in range(ok_dim_i, self.dims):
+                    _ans.append(_get_prefix(dim_i))
+        for dim_i in range(self.dims - 1, -1, -1):
+            _ans.append(_get_suffix(dim_i))
+        return "".join(_ans)
