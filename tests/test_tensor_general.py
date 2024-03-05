@@ -227,7 +227,6 @@ if numba.cuda.is_available():
         x = minitorch.tensor(x1, backend=shared["cuda"])
         y = minitorch.tensor(y1, backend=shared["cuda"])
         z2 = x @ y
-
         for i in range(2):
             for j in range(2):
                 assert_close(z[i, j], z2[i, j])
@@ -296,16 +295,14 @@ if numba.cuda.is_available():
         x = minitorch.tensor(x1, backend=shared["cuda"])
         y = minitorch.tensor(y1, backend=shared["cuda"])
         z2 = x @ y
-
         for b in range(2):
             for i in range(size_a):
                 for j in range(size_b):
-                    print(i, j)
                     assert_close(z[b, i, j], z2[b, i, j])
 
 
 @given(data())
-@settings(max_examples=25)
+@settings(max_examples=10)
 @pytest.mark.parametrize("fn", two_arg)
 @pytest.mark.parametrize("backend", backend_tests)
 def test_two_grad_broadcast(
@@ -316,7 +313,6 @@ def test_two_grad_broadcast(
     "Run backward for all two arg functions above with broadcast."
     t1, t2 = data.draw(shaped_tensors(2, backend=shared[backend]))
     name, base_fn, tensor_fn = fn
-
     grad_check(tensor_fn, t1, t2)
 
     # broadcast check

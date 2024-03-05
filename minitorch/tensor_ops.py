@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable, Optional, Type
+from typing import TYPE_CHECKING, Callable, List, Optional, Type
 
 import numpy as np
 from typing_extensions import Protocol
@@ -8,6 +8,9 @@ from typing_extensions import Protocol
 from . import operators
 from .tensor_data import (
     MAX_DIMS,
+    IndexingError,
+    UserShape,
+    UserStrides,
     broadcast_index,
     index_to_position,
     shape_broadcast,
@@ -19,33 +22,68 @@ if TYPE_CHECKING:
     from .tensor_data import Index, Shape, Storage, Strides
 
 
+def _check_shape_able_to_used_in_big_pos2small_pos(
+    big_shape: Shape, small_shape: Shape
+) -> None:
+    assert np.prod(big_shape) >= np.prod(small_shape)
+    assert (
+        list(shape_broadcast(big_shape.tolist(), small_shape.tolist()))
+        == big_shape.tolist()
+    )
+
+
+def _big_pos2small_pos(
+    big_pos: int,
+    big_shape: Shape,
+    big_strides: Strides,
+    small_shape: Shape,
+    small_strides: Strides,
+) -> int:
+    need_broadcast = False
+    if not np.array_equal(small_shape, big_shape) or not np.array_equal(
+        big_strides, small_strides
+    ):
+        need_broadcast = True
+
+    big_index = np.zeros(len(big_shape), dtype=np.int32)
+    to_index(big_pos, big_shape, big_index)
+    if need_broadcast:
+        small_index = np.zeros(len(small_shape), dtype=np.int32)
+        broadcast_index(big_index, big_shape, small_shape, small_index)
+    else:
+        small_index = big_index
+    small_pos = index_to_position(small_index, small_strides)
+    assert big_pos == index_to_position(big_index, big_strides)
+    assert small_pos == index_to_position(small_index, small_strides)
+    return small_pos
+
+
 class MapProto(Protocol):
-    def __call__(self, x: Tensor, out: Optional[Tensor] = ..., /) -> Tensor:
-        ...
+    def __call__(self, x: Tensor, out: Optional[Tensor] = ..., /) -> Tensor: ...
 
 
 class TensorOps:
     @staticmethod
-    def map(fn: Callable[[float], float]) -> MapProto:
+    def map(fn: Callable[[float], float]) -> MapProto:  # type: ignore[empty-body]
         pass
 
     @staticmethod
-    def cmap(fn: Callable[[float], float]) -> Callable[[Tensor, Tensor], Tensor]:
+    def cmap(fn: Callable[[float], float]) -> Callable[[Tensor, Tensor], Tensor]:  # type: ignore[empty-body]
         pass
 
     @staticmethod
-    def zip(fn: Callable[[float, float], float]) -> Callable[[Tensor, Tensor], Tensor]:
+    def zip(fn: Callable[[float, float], float]) -> Callable[[Tensor, Tensor], Tensor]:  # type: ignore[empty-body]
         pass
 
     @staticmethod
-    def reduce(
+    def reduce(  # type: ignore[empty-body]
         fn: Callable[[float, float], float], start: float = 0.0
     ) -> Callable[[Tensor, int], Tensor]:
         pass
 
     @staticmethod
-    def matrix_multiply(a: Tensor, b: Tensor) -> Tensor:
-        raise NotImplementedError("Not implemented in this assignment")
+    def matrix_multiply(a: Tensor, b: Tensor) -> Tensor:  # type: ignore[empty-body]
+        pass
 
     cuda = False
 
@@ -53,15 +91,12 @@ class TensorOps:
 class TensorBackend:
     def __init__(self, ops: Type[TensorOps]):
         """
+        A collection of tensor functions
         Dynamically construct a tensor backend based on a `tensor_ops` object
         that implements map, zip, and reduce higher-order functions.
 
         Args:
             ops : tensor operations object see `tensor_ops.py`
-
-
-        Returns :
-            A collection of tensor functions
 
         """
 
@@ -116,12 +151,18 @@ class SimpleOps(TensorOps):
 
         Args:
             fn: function from float-to-float to apply.
-            a (:class:`TensorData`): tensor to map over
-            out (:class:`TensorData`): optional, tensor data to fill in,
-                   should broadcast with `a`
 
         Returns:
-            new tensor data
+            The wrapped function
+
+        Fn:
+            Args:
+                a (:class:`TensorData`): tensor to map over
+                out (:class:`TensorData`): optional, tensor data to fill in,
+                    should broadcast with `a`
+
+            Returns:
+                new tensor data
         """
 
         f = tensor_map(fn)
@@ -159,11 +200,17 @@ class SimpleOps(TensorOps):
 
         Args:
             fn: function from two floats-to-float to apply
-            a (:class:`TensorData`): tensor to zip over
-            b (:class:`TensorData`): tensor to zip over
 
         Returns:
-            :class:`TensorData` : new tensor data
+            The wrapped function
+
+        Fn:
+            Args:
+                a (:class:`TensorData`): tensor to zip over
+                b (:class:`TensorData`): tensor to zip over
+
+            Returns:
+                :class:`TensorData` : new tensor data
         """
 
         f = tensor_zip(fn)
@@ -196,14 +243,20 @@ class SimpleOps(TensorOps):
                 for i:
                     out[1, j] = fn(out[1, j], a[i, j])
 
-
         Args:
             fn: function from two floats-to-float to apply
-            a (:class:`TensorData`): tensor to reduce over
-            dim (int): int of dim to reduce
+            start: start value t[0] = fn(t[n], fn(t[n-1], ...fn(t[0], start)))
 
         Returns:
-            :class:`TensorData` : new tensor
+            The wrapped function
+
+        Fn:
+            Args:
+                a (:class:`TensorData`): tensor to reduce over
+                dim (int): int of dim to reduce
+
+            Returns:
+                :class:`TensorData` : new tensor
         """
         f = tensor_reduce(fn)
 
@@ -264,7 +317,13 @@ def tensor_map(
         in_shape: Shape,
         in_strides: Strides,
     ) -> None:
-        raise NotImplementedError("Need to include this file from past assignment.")
+        _check_shape_able_to_used_in_big_pos2small_pos(out_shape, in_shape)
+        mid_storage = [fn(v) for v in in_storage]
+        for out_pos in range(len(out)):
+            in_pos = _big_pos2small_pos(
+                out_pos, out_shape, out_strides, in_shape, in_strides
+            )
+            out[out_pos] = mid_storage[in_pos]
 
     return _map
 
@@ -308,7 +367,16 @@ def tensor_zip(
         b_shape: Shape,
         b_strides: Strides,
     ) -> None:
-        raise NotImplementedError("Need to include this file from past assignment.")
+        _check_shape_able_to_used_in_big_pos2small_pos(out_shape, a_shape)
+        _check_shape_able_to_used_in_big_pos2small_pos(out_shape, b_shape)
+        for out_pos in range(len(out)):
+            a_pos = _big_pos2small_pos(
+                out_pos, out_shape, out_strides, a_shape, a_strides
+            )
+            b_pos = _big_pos2small_pos(
+                out_pos, out_shape, out_strides, b_shape, b_strides
+            )
+            out[out_pos] = fn(a_storage[a_pos], b_storage[b_pos])
 
     return _zip
 
@@ -338,7 +406,17 @@ def tensor_reduce(
         a_strides: Strides,
         reduce_dim: int,
     ) -> None:
-        raise NotImplementedError("Need to include this file from past assignment.")
+        for out_pos in range(len(out)):
+            out_index = np.zeros(len(out_shape), dtype=np.int32)
+            to_index(out_pos, out_shape, out_index)
+            assert out_index[reduce_dim] == 0
+            a_index = np.copy(out_index)
+            ans = out[out_pos]
+            for i in range(a_shape[reduce_dim]):
+                a_index[reduce_dim] = i
+                a_pos = index_to_position(a_index, a_strides)
+                ans = fn(a_storage[a_pos], ans)
+            out[out_pos] = ans
 
     return _reduce
 
