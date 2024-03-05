@@ -30,24 +30,6 @@ index_to_position = njit(inline="always")(index_to_position)
 broadcast_index = njit(inline="always")(broadcast_index)
 
 
-@njit(inline="always")  # type: ignore[misc]
-def big_pos2small_pos_with_shape_broadcast(
-    big_pos: int,
-    big_shape: Shape,
-    big_strides: Strides,
-    small_shape: Shape,
-    small_strides: Strides,
-) -> int:
-    big_index = np.zeros(
-        len(big_shape), dtype=np.int32
-    )  # will be automatically hoisted
-    small_index = np.zeros(len(small_shape), dtype=np.int32)
-    to_index(big_pos, big_shape, big_index)
-    broadcast_index(big_index, big_shape, small_shape, small_index)
-    small_pos = index_to_position(small_index, small_strides)
-    return small_pos
-
-
 class FastOps(TensorOps):
     @staticmethod
     def map(fn: Callable[[float], float]) -> MapProto:
@@ -187,11 +169,18 @@ def tensor_map(
                 out[out_pos] = fn(in_storage[out_pos])
             return
 
-        for out_pos in prange(len(out)):
-            in_pos = big_pos2small_pos_with_shape_broadcast(
-                out_pos, out_shape, out_strides, in_shape, in_strides
-            )
-            # print("map, out_pos", out_pos, in_pos, out_shape, in_shape)
+        for outi in prange(len(out)):
+            out_index = np.zeros(
+                len(out_shape), dtype=np.int32
+            )  # will be automatically hoisted
+            in_index = np.zeros(len(in_shape), dtype=np.int32)
+            to_index(outi, out_shape, out_index)
+            out_pos = index_to_position(out_index, out_strides)
+            if out_pos != outi:
+                print("ERROR!", out_pos, outi)
+            # assert out_pos == i
+            broadcast_index(out_index, out_shape, in_shape, in_index)
+            in_pos = index_to_position(in_index, in_strides)
             out[out_pos] = fn(in_storage[in_pos])
 
     return njit(parallel=True)(_map)  # type: ignore
@@ -230,9 +219,6 @@ def tensor_zip(
         b_shape: Shape,
         b_strides: Strides,
     ) -> None:
-        out_index = np.zeros(len(out_shape), dtype=np.int32)
-        a_index = np.zeros(len(a_shape), dtype=np.int32)
-        b_index = np.zeros(len(b_shape), dtype=np.int32)
         a_need_shape_broadcast = not np.array_equal(
             a_shape, out_shape
         ) or not np.array_equal(a_strides, out_strides)
@@ -240,10 +226,16 @@ def tensor_zip(
             b_shape, out_shape
         ) or not np.array_equal(b_strides, out_strides)
         # print("_zip", out_shape, out_strides, a_storage, a_shape, a_strides, b_storage, b_shape, b_strides)
-        for out_pos in prange(len(out)):
+        for outi in prange(len(out)):
+            out_index = np.zeros(len(out_shape), dtype=np.int32)
+            a_index = np.zeros(len(a_shape), dtype=np.int32)
+            b_index = np.zeros(len(b_shape), dtype=np.int32)
+            to_index(outi, out_shape, out_index)
+            out_pos = index_to_position(out_index, out_strides)
+            if out_pos != outi:
+                print("ERROR!", out_pos, outi)
             a_pos = b_pos = out_pos
             if a_need_shape_broadcast or b_need_shape_broadcast:
-                to_index(out_pos, out_shape, out_index)
                 if a_need_shape_broadcast:
                     broadcast_index(out_index, out_shape, a_shape, a_index)
                     a_pos = index_to_position(a_index, a_strides)
@@ -291,9 +283,12 @@ def tensor_reduce(
         )
         selected_dim_shape = a_shape[reduce_dim]
         selected_dim_stride = a_strides[reduce_dim]
-        out_index = np.zeros(len(out_shape), dtype=np.int32)
-        for out_pos in prange(len(out)):
-            to_index(out_pos, out_shape, out_index)
+        for outi in prange(len(out)):
+            out_index = np.zeros(len(out_shape), dtype=np.int32)
+            to_index(outi, out_shape, out_index)
+            out_pos = index_to_position(out_index, out_strides)
+            if out_pos != outi:
+                print("ERROR!", out_pos, outi)
             a_pos_start = index_to_position(out_index, a_strides)
             v = out[out_pos]
             for a_pos in range(
@@ -301,7 +296,7 @@ def tensor_reduce(
                 a_pos_start + selected_dim_shape * selected_dim_stride,
                 selected_dim_stride,
             ):
-                assert a_pos < len(a_storage)
+                # assert a_pos < len(a_storage) # !!!!!!!!!!!!numba do not allow assert or other exit point within prange
                 # print("reduce, out_pos", out_pos, a_pos, out_index, out_shape, a_shape)
                 v = fn(v, a_storage[a_pos])
             out[out_pos] = v
@@ -352,9 +347,6 @@ def _tensor_matrix_multiply(
     assert out_shape[-2] == a_shape[-2] and out_shape[-1] == b_shape[-1]
     # MxN, NxD
     shape_n = a_shape[-1]
-    out_index = np.zeros(len(out_shape), dtype=np.int32)
-    a_index = np.zeros(len(out_shape), dtype=np.int32)
-    b_index = np.zeros(len(out_shape), dtype=np.int32)
     a_need_broadcast = not np.array_equal(
         out_shape[:-2], a_shape[:-2]
     )  # do not need to handle strides since we are copying indexx
@@ -371,8 +363,14 @@ def _tensor_matrix_multiply(
     out_shape_pseudo_b[:-2] = out_shape[:-2]
     out_shape_pseudo_b[-2:] = b_shape[-2:]
 
-    for out_pos in prange(len(out)):
-        to_index(out_pos, out_shape, out_index)
+    for outi in prange(len(out)):
+        out_index = np.zeros(len(out_shape), dtype=np.int32)
+        a_index = np.zeros(len(out_shape), dtype=np.int32)
+        b_index = np.zeros(len(out_shape), dtype=np.int32)
+        to_index(outi, out_shape, out_index)
+        out_pos = index_to_position(out_index, out_strides)
+        if out_pos != outi:
+            print("ERROR!", out_pos, outi)
 
         # calculate a_start_pos
         out_index_cache = out_index[-1]
